@@ -613,7 +613,7 @@
         }
 
         tbody tr:hover {
-            background: var(--gray-50);
+            background: var(--gray-100);
         }
 
         /* ===== STATUS BADGES ===== */
@@ -778,7 +778,7 @@
 
         /* ===== WEEK CARDS ===== */
         .week-card {
-            background: linear-gradient(135deg, var(--gray-50), var(--bg-panel));
+            background: linear-gradient(135deg, var(--gray-100), var(--bg-panel));
             border-left: 4px solid var(--info);
             padding: 20px;
             border-radius: var(--radius);
@@ -1222,6 +1222,82 @@
             .performer-stats {
                 text-align: left;
             }
+        }
+
+        /* Additional styles for new components */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .channel-toggle {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .table-search {
+            position: relative;
+            margin-bottom: 15px;
+        }
+        
+        .table-search input {
+            width: 100%;
+            padding: 10px 40px 10px 15px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+        
+        .table-search i {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .form-preview {
+            background: var(--gray-100);
+            padding: 12px;
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            color: var(--text-main);
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .card-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 5px;
+        }
+        
+        .kpi-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -1668,9 +1744,28 @@
             
             getWeeklyData: function(week) {
                 const allData = [...this.delivery, ...this.online];
-                if (!week) return allData;
+                if (!week || week === 'all') return allData;
                 
-                return allData.filter(d => Math.ceil(d.day / 7) === week);
+                return allData.filter(d => Math.ceil(d.day / 7) === parseInt(week));
+            },
+            
+            getDailyMatrixData: function(channel) {
+                const data = channel === 'delivery' ? this.delivery : this.online;
+                const matrix = {};
+                
+                // Group by day and branch
+                data.forEach(item => {
+                    if (!matrix[item.day]) {
+                        matrix[item.day] = {};
+                    }
+                    matrix[item.day][item.branch] = {
+                        sales: item.sales,
+                        txn: item.txn,
+                        avr: item.avr
+                    };
+                });
+                
+                return matrix;
             },
             
             getAgentStats: function() {
@@ -1790,6 +1885,7 @@
             currentChannel: 'delivery',
             currentChart: 'sales',
             charts: {},
+            weeklyFilter: 'all',
             
             // Initialization
             init: function() {
@@ -1811,6 +1907,9 @@
                 
                 // Initialize date range picker
                 this.initDateRangePicker();
+                
+                // Populate branch filter for charts
+                this.populateBranchFilter();
             },
             
             // UI Setup
@@ -1915,6 +2014,11 @@
                 document.getElementById('chartBranchFilter')?.addEventListener('change', () => {
                     this.updateCharts();
                 });
+                
+                // Matrix search
+                document.getElementById('matrixSearch')?.addEventListener('input', (e) => {
+                    this.filterMatrixTable(e.target.value);
+                });
             },
             
             initDateRangePicker: function() {
@@ -1929,6 +2033,19 @@
                         'This Month': [moment().startOf('month'), moment().endOf('month')],
                         'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
                     }
+                });
+            },
+            
+            populateBranchFilter: function() {
+                const filter = document.getElementById('chartBranchFilter');
+                if (!filter) return;
+                
+                filter.innerHTML = '<option value="all">All Branches</option>';
+                DataModel.branches.forEach(branch => {
+                    const option = document.createElement('option');
+                    option.value = branch;
+                    option.textContent = branch;
+                    filter.appendChild(option);
                 });
             },
             
@@ -2103,6 +2220,521 @@
                         </div>
                     </div>
                 `).join('');
+            },
+            
+            // Weekly Analysis
+            renderWeeklyAnalysis: function() {
+                this.renderWeeklyFilters();
+                this.renderWeeklyKPIs();
+                this.renderWeeklyCharts();
+                this.renderWeekCards();
+            },
+            
+            renderWeeklyFilters: function() {
+                const container = document.querySelector('.weekly-filters');
+                if (!container) return;
+                
+                container.innerHTML = `
+                    <div class="filter-group">
+                        <label class="filter-label">Filter by Week</label>
+                        <select id="weekFilter" class="form-control">
+                            <option value="all">All Weeks</option>
+                            <option value="1">Week 1</option>
+                            <option value="2">Week 2</option>
+                            <option value="3">Week 3</option>
+                            <option value="4">Week 4</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Filter by Day</label>
+                        <select id="dayFilter" class="form-control">
+                            <option value="all">All Days</option>
+                            <option value="1">Monday</option>
+                            <option value="2">Tuesday</option>
+                            <option value="3">Wednesday</option>
+                            <option value="4">Thursday</option>
+                            <option value="5">Friday</option>
+                            <option value="6">Saturday</option>
+                            <option value="7">Sunday</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Filter by Branch</label>
+                        <select id="branchFilterWeekly" class="form-control">
+                            <option value="all">All Branches</option>
+                            ${DataModel.branches.map(b => `<option value="${b}">${b}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Filter by Channel</label>
+                        <select id="channelFilter" class="form-control">
+                            <option value="all">All Channels</option>
+                            <option value="delivery">Delivery</option>
+                            <option value="online">Online</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <button class="btn btn-primary" onclick="Dashboard.applyWeeklyFilters()">
+                            <i class="fas fa-filter"></i>
+                            Apply Filters
+                        </button>
+                    </div>
+                `;
+                
+                // Set up event listeners for filters
+                ['weekFilter', 'dayFilter', 'branchFilterWeekly', 'channelFilter'].forEach(id => {
+                    document.getElementById(id)?.addEventListener('change', () => {
+                        this.applyWeeklyFilters();
+                    });
+                });
+            },
+            
+            applyWeeklyFilters: function() {
+                const week = document.getElementById('weekFilter')?.value || 'all';
+                const day = document.getElementById('dayFilter')?.value || 'all';
+                const branch = document.getElementById('branchFilterWeekly')?.value || 'all';
+                const channel = document.getElementById('channelFilter')?.value || 'all';
+                
+                this.weeklyFilter = { week, day, branch, channel };
+                this.renderWeeklyKPIs();
+                this.renderWeeklyCharts();
+                this.renderWeekCards();
+            },
+            
+            renderWeeklyKPIs: function() {
+                const container = document.getElementById('weeklyContent');
+                if (!container) return;
+                
+                // Get filtered data
+                let data = [...DataModel.delivery, ...DataModel.online];
+                
+                if (this.weeklyFilter.week !== 'all') {
+                    const week = parseInt(this.weeklyFilter.week);
+                    data = data.filter(d => Math.ceil(d.day / 7) === week);
+                }
+                
+                if (this.weeklyFilter.branch !== 'all') {
+                    data = data.filter(d => d.branch === this.weeklyFilter.branch);
+                }
+                
+                if (this.weeklyFilter.channel !== 'all') {
+                    data = data.filter(d => {
+                        const isDelivery = DataModel.delivery.includes(d);
+                        return this.weeklyFilter.channel === 'delivery' ? isDelivery : !isDelivery;
+                    });
+                }
+                
+                // Calculate KPIs
+                const totalSales = data.reduce((sum, d) => sum + d.sales, 0);
+                const totalTransactions = data.reduce((sum, d) => sum + d.txn, 0);
+                const avgATV = totalTransactions > 0 ? parseFloat((totalSales / totalTransactions).toFixed(1)) : 0;
+                
+                // Calculate changes
+                const previousData = this.getPreviousPeriodData(data);
+                const prevSales = previousData.reduce((sum, d) => sum + d.sales, 0);
+                const prevTransactions = previousData.reduce((sum, d) => sum + d.txn, 0);
+                const salesChange = prevSales > 0 ? ((totalSales - prevSales) / prevSales * 100).toFixed(1) : 0;
+                const transactionsChange = prevTransactions > 0 ? ((totalTransactions - prevTransactions) / prevTransactions * 100).toFixed(1) : 0;
+                
+                const kpiContainer = `
+                    <div class="weekly-kpi-container">
+                        <div class="weekly-kpi-card ${totalSales >= 10000 ? 'high-performance' : totalSales >= 5000 ? 'medium-performance' : 'low-performance'}">
+                            <div class="weekly-kpi-title">Total Sales</div>
+                            <div class="weekly-kpi-value">AED ${totalSales.toLocaleString()}</div>
+                            <div class="weekly-kpi-change ${salesChange >= 0 ? 'positive' : 'negative'}">
+                                <i class="fas fa-arrow-${salesChange >= 0 ? 'up' : 'down'}"></i>
+                                ${Math.abs(salesChange)}% vs previous period
+                            </div>
+                        </div>
+                        <div class="weekly-kpi-card ${totalTransactions >= 200 ? 'high-performance' : totalTransactions >= 100 ? 'medium-performance' : 'low-performance'}">
+                            <div class="weekly-kpi-title">Total Transactions</div>
+                            <div class="weekly-kpi-value">${totalTransactions}</div>
+                            <div class="weekly-kpi-change ${transactionsChange >= 0 ? 'positive' : 'negative'}">
+                                <i class="fas fa-arrow-${transactionsChange >= 0 ? 'up' : 'down'}"></i>
+                                ${Math.abs(transactionsChange)}% vs previous period
+                            </div>
+                        </div>
+                        <div class="weekly-kpi-card ${avgATV >= 50 ? 'high-performance' : avgATV >= 40 ? 'medium-performance' : 'low-performance'}">
+                            <div class="weekly-kpi-title">Average Ticket Value</div>
+                            <div class="weekly-kpi-value">AED ${avgATV.toFixed(1)}</div>
+                            <div class="weekly-kpi-change">
+                                <i class="fas fa-info-circle"></i>
+                                Industry benchmark: AED 45+
+                            </div>
+                        </div>
+                        <div class="weekly-kpi-card">
+                            <div class="weekly-kpi-title">Data Points</div>
+                            <div class="weekly-kpi-value">${data.length}</div>
+                            <div class="weekly-kpi-change">
+                                <i class="fas fa-database"></i>
+                                Records analyzed
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.innerHTML = kpiContainer + container.innerHTML;
+            },
+            
+            getPreviousPeriodData: function(currentData) {
+                // For demo purposes, return a subset of data
+                return currentData.slice(0, Math.floor(currentData.length / 2));
+            },
+            
+            renderWeeklyCharts: function() {
+                const container = document.getElementById('weeklyContent');
+                if (!container) return;
+                
+                // Get filtered data
+                let data = [...DataModel.delivery, ...DataModel.online];
+                
+                if (this.weeklyFilter.week !== 'all') {
+                    const week = parseInt(this.weeklyFilter.week);
+                    data = data.filter(d => Math.ceil(d.day / 7) === week);
+                }
+                
+                if (this.weeklyFilter.branch !== 'all') {
+                    data = data.filter(d => d.branch === this.weeklyFilter.branch);
+                }
+                
+                if (this.weeklyFilter.channel !== 'all') {
+                    data = data.filter(d => {
+                        const isDelivery = DataModel.delivery.includes(d);
+                        return this.weeklyFilter.channel === 'delivery' ? isDelivery : !isDelivery;
+                    });
+                }
+                
+                // Group by week
+                const weeklyStats = {};
+                data.forEach(d => {
+                    const week = Math.ceil(d.day / 7);
+                    if (!weeklyStats[week]) {
+                        weeklyStats[week] = { sales: 0, transactions: 0, count: 0 };
+                    }
+                    weeklyStats[week].sales += d.sales;
+                    weeklyStats[week].transactions += d.txn;
+                    weeklyStats[week].count++;
+                });
+                
+                const weeks = Object.keys(weeklyStats).sort((a, b) => a - b);
+                const salesData = weeks.map(w => weeklyStats[w].sales);
+                const transactionsData = weeks.map(w => weeklyStats[w].transactions);
+                
+                const chartHTML = `
+                    <div class="weekly-chart-container">
+                        <div class="weekly-chart-card">
+                            <h4 class="weekly-chart-title">Weekly Sales Trend</h4>
+                            <div class="chart-container">
+                                <canvas id="weeklySalesChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="weekly-chart-card">
+                            <h4 class="weekly-chart-title">Weekly Transactions</h4>
+                            <div class="chart-container">
+                                <canvas id="weeklyTransactionsChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Append to container
+                const existingCharts = document.querySelector('.weekly-chart-container');
+                if (!existingCharts) {
+                    container.innerHTML += chartHTML;
+                }
+                
+                // Render charts
+                this.renderWeeklySalesChart(weeks, salesData);
+                this.renderWeeklyTransactionsChart(weeks, transactionsData);
+            },
+            
+            renderWeeklySalesChart: function(weeks, salesData) {
+                const ctx = document.getElementById('weeklySalesChart');
+                if (!ctx) return;
+                
+                if (this.charts.weeklySales) {
+                    this.charts.weeklySales.destroy();
+                }
+                
+                this.charts.weeklySales = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: weeks.map(w => `Week ${w}`),
+                        datasets: [{
+                            label: 'Sales (AED)',
+                            data: salesData,
+                            backgroundColor: 'rgba(211, 47, 47, 0.1)',
+                            borderColor: '#D32F2F',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Sales (AED)'
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+            
+            renderWeeklyTransactionsChart: function(weeks, transactionsData) {
+                const ctx = document.getElementById('weeklyTransactionsChart');
+                if (!ctx) return;
+                
+                if (this.charts.weeklyTransactions) {
+                    this.charts.weeklyTransactions.destroy();
+                }
+                
+                this.charts.weeklyTransactions = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: weeks.map(w => `Week ${w}`),
+                        datasets: [{
+                            label: 'Transactions',
+                            data: transactionsData,
+                            backgroundColor: 'rgba(25, 118, 210, 0.7)',
+                            borderColor: '#1976D2',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Number of Transactions'
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+            
+            renderWeekCards: function() {
+                const container = document.getElementById('weeklyContent');
+                if (!container) return;
+                
+                // Group data by week
+                const weeklyData = {};
+                DataModel.delivery.concat(DataModel.online).forEach(d => {
+                    const week = Math.ceil(d.day / 7);
+                    if (!weeklyData[week]) {
+                        weeklyData[week] = { sales: 0, transactions: 0, count: 0 };
+                    }
+                    weeklyData[week].sales += d.sales;
+                    weeklyData[week].transactions += d.txn;
+                    weeklyData[week].count++;
+                });
+                
+                const weeks = Object.keys(weeklyData).sort((a, b) => a - b);
+                
+                let weekCardsHTML = '<div class="card"><h3 class="card-title">Weekly Performance Overview</h3>';
+                
+                weeks.forEach(week => {
+                    const data = weeklyData[week];
+                    const avgATV = data.transactions > 0 ? (data.sales / data.transactions).toFixed(1) : 0;
+                    
+                    weekCardsHTML += `
+                        <div class="week-card" onclick="Dashboard.viewWeekDetails(${week})">
+                            <div class="week-header">
+                                Week ${week}
+                                <button class="btn btn-sm btn-secondary">
+                                    <i class="fas fa-eye"></i>
+                                    View Details
+                                </button>
+                            </div>
+                            <div class="week-stats">
+                                <div class="week-stat">
+                                    <div class="week-stat-value">AED ${data.sales.toLocaleString()}</div>
+                                    <div class="week-stat-label">Sales</div>
+                                </div>
+                                <div class="week-stat">
+                                    <div class="week-stat-value">${data.transactions}</div>
+                                    <div class="week-stat-label">Transactions</div>
+                                </div>
+                                <div class="week-stat">
+                                    <div class="week-stat-value">AED ${avgATV}</div>
+                                    <div class="week-stat-label">ATV</div>
+                                </div>
+                                <div class="week-stat">
+                                    <div class="week-stat-value">${data.count}</div>
+                                    <div class="week-stat-label">Data Points</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                weekCardsHTML += '</div>';
+                
+                // Replace existing week cards
+                const existingCards = container.querySelector('.card:has(h3.card-title:contains("Weekly Performance Overview"))');
+                if (existingCards) {
+                    existingCards.outerHTML = weekCardsHTML;
+                } else {
+                    container.innerHTML += weekCardsHTML;
+                }
+            },
+            
+            viewWeekDetails: function(week) {
+                alert(`Week ${week} details would be shown here in a detailed view.`);
+            },
+            
+            // Branch Performance
+            renderBranchPerformance: function() {
+                const stats = DataModel.getBranchStats();
+                const tbody = document.querySelector('#branchRankingTable tbody');
+                
+                // Sort branches by sales
+                const sortedBranches = Object.entries(stats)
+                    .sort(([,a], [,b]) => b.sales - a.sales);
+                
+                tbody.innerHTML = sortedBranches.map(([branch, data], index) => {
+                    const rank = index + 1;
+                    let performanceClass = 'low';
+                    if (rank <= 3) performanceClass = 'high';
+                    else if (rank <= 6) performanceClass = 'medium';
+                    
+                    return `
+                        <tr>
+                            <td><span class="ranking-badge rank-${Math.min(rank, 3)}">${rank}</span></td>
+                            <td><strong>${branch}</strong></td>
+                            <td>AED ${data.sales.toLocaleString()}</td>
+                            <td>${data.orders}</td>
+                            <td><span class="avr-indicator ${data.atv >= 50 ? 'avr-good' : data.atv >= 40 ? 'avr-average' : 'avr-poor'}">
+                                AED ${data.atv.toFixed(1)}
+                            </span></td>
+                            <td>
+                                <span class="performance-indicator"></span>
+                                ${performanceClass.charAt(0).toUpperCase() + performanceClass.slice(1)} Performance
+                            </td>
+                            <td><i class="fas fa-arrow-up text-success"></i> +12.5%</td>
+                        </tr>
+                    `;
+                }).join('');
+            },
+            
+            // Daily Matrix
+            renderDailyMatrix: function() {
+                const data = DataModel.getDailyMatrixData(this.currentChannel);
+                const days = Object.keys(data).sort((a, b) => a - b);
+                
+                // Get all unique branches from the data
+                const allBranches = new Set();
+                days.forEach(day => {
+                    Object.keys(data[day]).forEach(branch => allBranches.add(branch));
+                });
+                const branches = Array.from(allBranches).sort();
+                
+                // Build table
+                let tableHTML = `
+                    <thead>
+                        <tr>
+                            <th>Day</th>
+                            ${branches.map(b => `<th>${b}</th>`).join('')}
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                `;
+                
+                let grandTotal = 0;
+                const branchTotals = {};
+                branches.forEach(b => branchTotals[b] = 0);
+                
+                days.forEach(day => {
+                    let dayTotal = 0;
+                    let rowHTML = `<tr><td>Day ${day}</td>`;
+                    
+                    branches.forEach(branch => {
+                        const cellData = data[day] && data[day][branch];
+                        if (cellData) {
+                            const avrClass = cellData.avr >= 50 ? 'avr-good' : cellData.avr >= 40 ? 'avr-average' : 'avr-poor';
+                            rowHTML += `
+                                <td>
+                                    ${cellData.sales.toLocaleString()}<br>
+                                    <small class="${avrClass}">${cellData.txn} txns | AED ${cellData.avr.toFixed(1)}</small>
+                                </td>
+                            `;
+                            dayTotal += cellData.sales;
+                            branchTotals[branch] += cellData.sales;
+                            grandTotal += cellData.sales;
+                        } else {
+                            rowHTML += `<td>-</td>`;
+                        }
+                    });
+                    
+                    rowHTML += `<td><strong>${dayTotal.toLocaleString()}</strong></td></tr>`;
+                    tableHTML += rowHTML;
+                });
+                
+                // Add totals row
+                tableHTML += `
+                    </tbody>
+                    <tfoot>
+                        <tr style="background: var(--gray-100); font-weight: bold;">
+                            <td>Total</td>
+                            ${branches.map(b => `<td>${branchTotals[b].toLocaleString()}</td>`).join('')}
+                            <td>${grandTotal.toLocaleString()}</td>
+                        </tr>
+                    </tfoot>
+                `;
+                
+                document.getElementById('matrixTable').innerHTML = tableHTML;
+            },
+            
+            filterMatrixTable: function(searchTerm) {
+                const table = document.getElementById('matrixTable');
+                const rows = table.getElementsByTagName('tr');
+                searchTerm = searchTerm.toLowerCase();
+                
+                for (let i = 1; i < rows.length; i++) {
+                    const cells = rows[i].getElementsByTagName('td');
+                    let found = false;
+                    
+                    for (let j = 0; j < cells.length; j++) {
+                        if (cells[j].textContent.toLowerCase().includes(searchTerm)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    
+                    rows[i].style.display = found ? '' : 'none';
+                }
+            },
+            
+            // Agent Performance
+            renderAgentPerformance: function() {
+                // This would render agent performance view
+                console.log('Render agent performance');
+            },
+            
+            // Settings
+            renderSettings: function() {
+                // This would render settings view
+                console.log('Render settings');
             },
             
             // Chart Management
@@ -2312,64 +2944,6 @@
                 });
             },
             
-            // Weekly Analysis
-            renderWeeklyAnalysis: function() {
-                // Implement weekly analysis rendering
-                console.log('Render weekly analysis');
-            },
-            
-            // Branch Performance
-            renderBranchPerformance: function() {
-                const stats = DataModel.getBranchStats();
-                const tbody = document.querySelector('#branchRankingTable tbody');
-                
-                // Sort branches by sales
-                const sortedBranches = Object.entries(stats)
-                    .sort(([,a], [,b]) => b.sales - a.sales);
-                
-                tbody.innerHTML = sortedBranches.map(([branch, data], index) => {
-                    const rank = index + 1;
-                    let performanceClass = 'performance-low';
-                    if (rank <= 3) performanceClass = 'performance-high';
-                    else if (rank <= 6) performanceClass = 'performance-medium';
-                    
-                    return `
-                        <tr>
-                            <td><span class="ranking-badge rank-${Math.min(rank, 3)}">${rank}</span></td>
-                            <td><strong>${branch}</strong></td>
-                            <td>AED ${data.sales.toLocaleString()}</td>
-                            <td>${data.orders}</td>
-                            <td><span class="avr-indicator ${data.atv >= 50 ? 'avr-good' : data.atv >= 40 ? 'avr-average' : 'avr-poor'}">
-                                AED ${data.atv.toFixed(1)}
-                            </span></td>
-                            <td>
-                                <span class="performance-indicator ${performanceClass}"></span>
-                                ${performanceClass.replace('performance-', '').charAt(0).toUpperCase() + performanceClass.slice(11)}
-                            </td>
-                            <td><i class="fas fa-arrow-up text-success"></i> +12.5%</td>
-                        </tr>
-                    `;
-                }).join('');
-            },
-            
-            // Daily Matrix
-            renderDailyMatrix: function() {
-                // Implement daily matrix rendering
-                console.log('Render daily matrix');
-            },
-            
-            // Agent Performance
-            renderAgentPerformance: function() {
-                // Implement agent performance rendering
-                console.log('Render agent performance');
-            },
-            
-            // Settings
-            renderSettings: function() {
-                // Implement settings rendering
-                console.log('Render settings');
-            },
-            
             // Modal Management
             openBranchModal: function(editData = null) {
                 const modal = document.getElementById('branchModal');
@@ -2472,6 +3046,10 @@
                 modal.classList.add('show');
             },
             
+            openAgentAnalysisModal: function() {
+                this.showToast('Agent analysis would open here', 'info');
+            },
+            
             saveAgentData: function() {
                 const date = document.getElementById('agentDate').value;
                 const name = document.getElementById('agentName').value;
@@ -2507,6 +3085,10 @@
             
             closeModal: function(modalId) {
                 document.getElementById(modalId).classList.remove('show');
+            },
+            
+            openSettingsModal: function() {
+                this.showToast('Settings modal would open here', 'info');
             },
             
             // Channel Management
